@@ -1,5 +1,7 @@
 # ssk — SSH Key Installer
 
+[中文文档](README_zh.md)
+
 Automatically generates an SSH key pair (if needed) and installs it on a remote host for passwordless login.
 
 Supports **Windows** (PowerShell + batch wrapper) and **Linux/macOS** (Bash).
