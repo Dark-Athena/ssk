@@ -18,29 +18,20 @@
 
 ## 使用方法
 
-### Windows
+### 连接主机
 
-**双击** `ssk.cmd`，或在命令提示符 / PowerShell 中运行：
+**Windows** — 双击 `ssk.cmd`，或在命令提示符 / PowerShell 中运行：
 
 ```cmd
-ssk.cmd
-ssk.cmd root@192.168.1.1
-ssk.cmd root@192.168.1.1:2222
-ssk.cmd 192.168.1.1
-ssk.cmd 192.168.1.1:2222
+ssk
+ssk root@192.168.1.1
+ssk root@192.168.1.1:2222
+ssk 192.168.1.1
+ssk 192.168.1.1:2222
+ssk myserver
 ```
 
-也可以直接调用 PowerShell 脚本：
-
-```powershell
-.\save-ssh-key.ps1
-.\save-ssh-key.ps1 root@192.168.1.1
-.\save-ssh-key.ps1 root@192.168.1.1:2222
-.\save-ssh-key.ps1 192.168.1.1
-.\save-ssh-key.ps1 192.168.1.1:2222
-```
-
-### Linux / macOS
+**Linux / macOS：**
 
 ```bash
 chmod +x ssk.sh
@@ -50,7 +41,78 @@ chmod +x ssk.sh
 ./ssk.sh root@192.168.1.1:2222
 ./ssk.sh 192.168.1.1
 ./ssk.sh 192.168.1.1:2222
+./ssk.sh myserver
 ```
+
+也可以直接调用 PowerShell 脚本：
+
+```powershell
+.\save-ssh-key.ps1
+.\save-ssh-key.ps1 root@192.168.1.1
+```
+
+### 查看已保存的主机
+
+连接成功后，ssk 会自动将主机信息保存到 `~/.ssh/config`：
+
+```cmd
+:: Windows
+ssk list
+```
+
+```bash
+# Linux / macOS
+./ssk.sh list
+```
+
+输出示例：
+
+```
+1  root@192.168.1.1:22  [root@192.168.1.1]
+2  admin@10.0.0.5:2222  [admin@10.0.0.5:2222]
+```
+
+### 通过序号连接
+
+使用 `ssk list` 显示的序号直接连接：
+
+```cmd
+:: Windows
+ssk --id 2
+```
+
+```bash
+# Linux / macOS
+./ssk.sh --id 2
+```
+
+### 重命名主机别名
+
+给主机起一个好记的名字，之后用 `ssh 别名` 即可快速连接：
+
+```cmd
+:: Windows
+ssk list rename root@192.168.1.1 myserver
+```
+
+```bash
+# Linux / macOS
+./ssk.sh list rename root@192.168.1.1 myserver
+```
+
+### 调试模式
+
+添加 `--debug` 查看详细输出：
+
+```cmd
+ssk --debug root@192.168.1.1
+```
+
+```bash
+./ssk.sh --debug root@192.168.1.1
+```
+
+重命名后，用 `ssh myserver` 代替完整地址连接。你也可以直接编辑 `~/.ssh/config` 添加注释 — ssk 不会覆盖已有条目。
 
 ---
 
@@ -66,39 +128,47 @@ chmod +x ssk.sh
 | `root@192.168.1.1` | root | 192.168.1.1 | 22 |
 | `192.168.1.1:2222` | root *(默认)* | 192.168.1.1 | 2222 |
 | `192.168.1.1` | root *(默认)* | 192.168.1.1 | 22 |
+| `myserver` | *(从 config 读取)* | *(从 config 读取)* | *(从 config 读取)* |
 | *(不传参数)* | root *(默认)* | 交互输入 | 22 |
 
 - **默认用户名**：`root`
 - **默认端口**：`22`
+- **SSH config 别名**：如果主机名匹配 `~/.ssh/config` 中的 `Host` 别名，ssk 会自动解析出真实的 HostName、User 和 Port。参数中显式指定的 `用户名@` 或 `:端口` 优先级高于 config。
 
 ---
 
 ## 环境要求
 
 ### Windows
-- Windows 10 / 11，已启用 **OpenSSH 客户端**  
-  *(设置 → 应用 → 可选功能 → OpenSSH 客户端)*  
+- Windows 10 / 11，已启用 **OpenSSH 客户端**
+  *(设置 → 应用 → 可选功能 → OpenSSH 客户端)*
   或已安装 **Git for Windows**（包含 `ssh`、`ssh-keygen`）
 - PowerShell 5.1 或更高版本（Windows 10+ 内置）
 
 ### Linux / macOS
-- `ssh`、`ssh-keygen`、`ssh-copy-id`（大多数发行版已内置）
+- `ssh`、`ssh-keygen`（大多数发行版已内置）
+- `ssh-copy-id` — 用于标准 OpenSSH 服务器；连接 Dropbear 目标时不需要
 
 ---
 
 ## 工作原理
 
-1. 检查 `~/.ssh/id_ed25519` 是否已存在。  
+1. 检查 `~/.ssh/id_ed25519` 是否已存在。
    若不存在，则自动生成一对新的 **Ed25519** 密钥对，密码短语为空。
-2. 提示输入远程主机密码**一次**。
-3. 将公钥安装到远程主机的 `~/.ssh/authorized_keys` 中。
-4. 此后登录无需密码。
+2. 探测远程服务器，检测其 SSH 实现类型及支持的主机密钥算法。
+3. 提示输入远程主机密码**一次**。
+4. 将公钥安装到远程主机（已存在则跳过）：
+   - **Dropbear** 服务器：写入 `/etc/dropbear/authorized_keys`（若该路径不存在则写入 `~/.ssh/`）。
+   - **标准 OpenSSH** 服务器：使用 `ssh-copy-id` 写入 `~/.ssh/authorized_keys`。
+5. 将连接信息保存到 `~/.ssh/config`（已存在则跳过）。
+6. 安装完成后立即连接远程主机，无需额外操作。
 
 ---
 
 ## 安全说明
 
-- 生成的私钥**不设置密码短语**，方便使用。  
+- 生成的私钥**不设置密码短语**，方便使用。
   如需保护私钥，请手动运行 `ssh-keygen` 并设置密码短语。
-- 请确保 `~/.ssh/` 和 `~/.ssh/authorized_keys` 拥有正确的权限  
+- 请确保 `~/.ssh/` 和 `~/.ssh/authorized_keys` 拥有正确的权限
   （分别为 `700` 和 `600`）— 脚本会在 Linux 上自动设置。
+- 仅在服务器需要时才启用旧版 RSA 主机密钥算法，不影响现代服务器。
