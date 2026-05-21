@@ -20,12 +20,39 @@ Supports **Windows** (PowerShell + batch wrapper) and **Linux/macOS** (Bash).
 
 ## Usage
 
-### Connect to a host
+### Interactive mode
 
-**Windows** — double-click `ssk.cmd`, or run from Command Prompt / PowerShell:
+Run `ssk` (or `ssk.cmd` / `./ssk.sh`) without arguments to enter the interactive host selection interface. It lists all saved hosts and lets you type a number, connection string, or alias to connect. After the session ends, you return to the prompt for the next connection.
 
 ```cmd
+:: Windows
 ssk
+```
+
+```bash
+# Linux / macOS
+./ssk.sh
+```
+
+#### Interactive commands
+
+| Command | Description |
+|---------|-------------|
+| `/ls` `/list` | Show host list |
+| `/del <number>` | Delete host by list number |
+| `/rename <n> <name>` | Rename host alias by list number |
+| `/add <user@host>` | Save a new host to SSH config |
+| `/filter <keyword>` | Filter list by keyword |
+| `/clear` | Clear screen |
+| `/help` `/h` | Show help |
+| `/q` `/quit` `/exit` | Quit interactive mode |
+| `<number>` | Connect to host by list number |
+| `<string>` | Connect by user@host:port or host alias |
+
+### Connect to a host directly
+
+```cmd
+:: Windows
 ssk root@192.168.1.1
 ssk root@192.168.1.1:2222
 ssk 192.168.1.1
@@ -33,12 +60,8 @@ ssk 192.168.1.1:2222
 ssk myserver
 ```
 
-**Linux / macOS:**
-
 ```bash
-chmod +x ssk.sh
-
-./ssk.sh
+# Linux / macOS
 ./ssk.sh root@192.168.1.1
 ./ssk.sh root@192.168.1.1:2222
 ./ssk.sh 192.168.1.1

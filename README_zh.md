@@ -18,12 +18,39 @@
 
 ## 使用方法
 
-### 连接主机
+### 交互模式
 
-**Windows** — 双击 `ssk.cmd`，或在命令提示符 / PowerShell 中运行：
+不带参数运行 `ssk`（或 `ssk.cmd` / `./ssk.sh`）即可进入交互式主机选择界面。会列出所有已保存的主机，输入序号、连接字符串或别名即可连接。连接结束后自动返回提示符，无需退出脚本。
 
 ```cmd
+:: Windows
 ssk
+```
+
+```bash
+# Linux / macOS
+./ssk.sh
+```
+
+#### 交互命令
+
+| 命令 | 说明 |
+|------|------|
+| `/ls` `/list` | 显示主机列表 |
+| `/del <序号>` | 删除指定序号的连接 |
+| `/rename <序号> <新别名>` | 重命名指定序号的主机别名 |
+| `/add <user@host>` | 保存新连接到 SSH config |
+| `/filter <关键词>` | 按关键词过滤列表 |
+| `/clear` | 清屏 |
+| `/help` `/h` | 显示帮助 |
+| `/q` `/quit` `/exit` | 退出交互模式 |
+| `<序号>` | 按序号连接 |
+| `<连接字符串>` | 按 user@host:port 或别名连接 |
+
+### 直接连接主机
+
+```cmd
+:: Windows
 ssk root@192.168.1.1
 ssk root@192.168.1.1:2222
 ssk 192.168.1.1
@@ -31,12 +58,8 @@ ssk 192.168.1.1:2222
 ssk myserver
 ```
 
-**Linux / macOS：**
-
 ```bash
-chmod +x ssk.sh
-
-./ssk.sh
+# Linux / macOS
 ./ssk.sh root@192.168.1.1
 ./ssk.sh root@192.168.1.1:2222
 ./ssk.sh 192.168.1.1

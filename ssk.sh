@@ -3,7 +3,7 @@
 # SSH key installer with host management.
 #
 # Usage:
-#   ./ssk.sh                              - connect (prompt for host)
+#   ./ssk.sh                              - interactive host selection
 #   ./ssk.sh user@host:port               - connect to host
 #   ./ssk.sh --id N                       - connect to Nth saved host
 #   ./ssk.sh list                         - list saved hosts
@@ -25,8 +25,8 @@ log_err() { echo "$@" >&2; }
 
 do_list() {
   if [[ ! -f "$CONFIG_FILE" ]]; then
-    log_err "No SSH config found at $CONFIG_FILE"
-    exit 1
+    echo "No hosts saved yet."
+    return 0
   fi
 
   local idx=0 host_name="" host_addr="" user_name="" port=""
@@ -57,8 +57,8 @@ do_list() {
 do_get_alias_by_id() {
   local target_id="$1"
   if [[ ! -f "$CONFIG_FILE" ]]; then
-    log_err "No SSH config found at $CONFIG_FILE"
-    exit 1
+    echo "No hosts saved yet."
+    return 1
   fi
 
   local idx=0 host_name=""
@@ -91,8 +91,8 @@ do_rename() {
   local new_alias="$2"
 
   if [[ ! -f "$CONFIG_FILE" ]]; then
-    log_err "No SSH config found at $CONFIG_FILE"
-    exit 1
+    echo "No hosts saved yet."
+    return 0
   fi
   if [[ -z "$old_alias" || -z "$new_alias" ]]; then
     log_err "Usage: ssk list rename <old-alias> <new-alias>"
@@ -109,6 +109,263 @@ do_rename() {
 
   sed -i "s/^Host ${old_escaped}\$/Host ${new_alias}/" "$CONFIG_FILE"
   echo "Renamed: $old_alias -> $new_alias"
+}
+
+do_connect() {
+  do_list
+  echo ""
+  echo "Type /help for available commands, /q to quit."
+  echo ""
+
+  while true; do
+    read -rp "ssk> " _input
+    [[ -z "$_input" ]] && continue
+
+    # --- / prefix commands ---
+    if [[ "$_input" == /* ]]; then
+      _cmd="${_input%% *}"
+      _args="${_input#* }"
+      [[ "$_args" == "$_cmd" ]] && _args=""
+
+      case "$_cmd" in
+        /q|/quit|/exit) return 0 ;;
+        /list|/ls) do_list; echo "" ;;
+        /del|/rm)
+          if [[ -z "$_args" ]]; then echo "Usage: /del <number>"; echo ""; continue; fi
+          do_del_by_id "$_args" && { do_list; echo ""; }
+          ;;
+        /rename)
+          _rn_id="${_args%% *}"
+          _rn_new="${_args#* }"
+          if [[ -z "$_rn_id" || -z "$_rn_new" || "$_rn_new" == "$_rn_id" ]]; then
+            echo "Usage: /rename <number> <new-alias>"; echo ""; continue
+          fi
+          do_rename_by_id "$_rn_id" "$_rn_new" && { do_list; echo ""; }
+          ;;
+        /add)
+          if [[ -z "$_args" ]]; then echo "Usage: /add user@host:port"; echo ""; continue; fi
+          do_add "$_args" && { do_list; echo ""; }
+          ;;
+        /filter|/fi)
+          do_filter "$_args"; echo ""
+          ;;
+        /clear) clear ;;
+        /help|/h|/)
+          echo ""
+          echo "Available commands:"
+          echo "  /ls  /list           Show host list"
+          echo "  /del <number>        Delete host by list number"
+          echo "  /rename <n> <name>   Rename host alias by list number"
+          echo "  /add <user@host>     Save a new host to config"
+          echo "  /filter <keyword>    Filter list by keyword"
+          echo "  /clear               Clear screen"
+          echo "  /help  /h            Show this help"
+          echo "  /q  /quit  /exit     Quit interactive mode"
+          echo ""
+          echo "  <number>             Connect to host by list number"
+          echo "  <string>             Connect by user@host:port or host alias"
+          echo ""
+          ;;
+        *)
+          echo "Unknown command: $_cmd"
+          echo "Type /help for available commands."
+          echo ""
+          ;;
+      esac
+      continue
+    fi
+
+    # --- Default: connect ---
+    if [[ "$_input" =~ ^[0-9]+$ ]]; then
+      _target=$(do_get_alias_by_id "$_input") || { echo "Invalid selection: $_input"; echo ""; continue; }
+      echo "Connecting to $_target..."
+      "$0" "$_target" || true
+    else
+      echo "Connecting to $_input..."
+      "$0" "$_input" || true
+    fi
+    echo ""
+  done
+}
+
+do_del_by_id() {
+  local target_id="$1"
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "No hosts saved yet."
+    return 1
+  fi
+
+  local idx=0 host_name="" target_alias=""
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    if [[ "$line" =~ ^[[:space:]]*Host[[:space:]]+(.*) ]]; then
+      if [[ -n "$host_name" ]]; then
+        idx=$((idx+1))
+        if [[ "$idx" == "$target_id" ]]; then
+          target_alias="$host_name"
+          break
+        fi
+      fi
+      host_name="${BASH_REMATCH[1]}"
+    fi
+  done < "$CONFIG_FILE"
+  if [[ -n "$host_name" && -z "$target_alias" ]]; then
+    idx=$((idx+1))
+    if [[ "$idx" == "$target_id" ]]; then
+      target_alias="$host_name"
+    fi
+  fi
+
+  if [[ -z "$target_alias" ]]; then
+    log_err "Host not found for id: $target_id"
+    return 1
+  fi
+
+  local escaped
+  escaped=$(printf '%s' "$target_alias" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
+  # Delete the Host line and its indented sub-lines
+  sed -i "/^Host ${escaped}\$/,/^[^[:space:]]/{ /^Host ${escaped}\$/d; /^[[:space:]]/d; }" "$CONFIG_FILE"
+  # Remove leading blank lines left behind
+  sed -i '/./,$!d' "$CONFIG_FILE"
+  echo "Deleted: $target_alias"
+  return 0
+}
+
+do_rename_by_id() {
+  local target_id="$1"
+  local new_alias="$2"
+  local old_alias
+
+  old_alias=$(do_get_alias_by_id "$target_id") || return 1
+
+  local escaped
+  escaped=$(printf '%s' "$old_alias" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
+
+  if ! grep -q "^Host ${old_alias}\$" "$CONFIG_FILE"; then
+    log_err "Host alias not found: $old_alias"
+    return 1
+  fi
+
+  sed -i "s/^Host ${escaped}\$/Host ${new_alias}/" "$CONFIG_FILE"
+  echo "Renamed: $old_alias -> $new_alias"
+  return 0
+}
+
+do_add() {
+  local target="$1"
+  if [[ -z "$target" ]]; then
+    log_err "Usage: /add user@host:port"
+    return 1
+  fi
+
+  local user_name="root" host_addr="$target" port="22"
+
+  if [[ "$target" =~ ^([^@]+)@([^:]+):([0-9]+)$ ]]; then
+    user_name="${BASH_REMATCH[1]}"
+    host_addr="${BASH_REMATCH[2]}"
+    port="${BASH_REMATCH[3]}"
+  elif [[ "$target" =~ ^([^@]+)@([^:]+)$ ]]; then
+    user_name="${BASH_REMATCH[1]}"
+    host_addr="${BASH_REMATCH[2]}"
+  elif [[ "$target" =~ ^([^:]+):([0-9]+)$ ]]; then
+    host_addr="${BASH_REMATCH[1]}"
+    port="${BASH_REMATCH[2]}"
+  fi
+
+  local config_path="$HOME/.ssh/config"
+  local host_alias="$target"
+
+  # Dedup check
+  if [[ -f "$config_path" ]]; then
+    local _current_block="" _dup=false
+    while IFS= read -r _line || [[ -n "$_line" ]]; do
+      if [[ "$_line" =~ ^[[:space:]]*Host[[:space:]] ]]; then
+        if [[ -n "$_current_block" ]]; then
+          if echo "$_current_block" | grep -q "HostName[[:space:]]*${host_addr}"; then
+            if echo "$_current_block" | grep -q "User[[:space:]]*${user_name}"; then
+              if [[ "$port" == "22" ]]; then
+                echo "$_current_block" | grep -q "Port[[:space:]]*" || _dup=true
+                echo "$_current_block" | grep -q "Port[[:space:]]*22" && _dup=true
+              else
+                echo "$_current_block" | grep -q "Port[[:space:]]*${port}" && _dup=true
+              fi
+            fi
+          fi
+          if $_dup; then echo "Already exists: $host_alias"; return 0; fi
+        fi
+        _current_block="$_line"
+      elif [[ -n "$_line" ]]; then
+        _current_block="${_current_block}"$'\n'"${_line}"
+      fi
+    done < "$config_path"
+    if [[ -n "$_current_block" ]]; then
+      if echo "$_current_block" | grep -q "HostName[[:space:]]*${host_addr}"; then
+        if echo "$_current_block" | grep -q "User[[:space:]]*${user_name}"; then
+          if [[ "$port" == "22" ]]; then
+            echo "$_current_block" | grep -q "Port[[:space:]]*" || _dup=true
+            echo "$_current_block" | grep -q "Port[[:space:]]*22" && _dup=true
+          else
+            echo "$_current_block" | grep -q "Port[[:space:]]*${port}" && _dup=true
+          fi
+        fi
+      fi
+      if $_dup; then echo "Already exists: $host_alias"; return 0; fi
+    fi
+  fi
+
+  local date_str
+  date_str=$(date +%Y-%m-%d)
+  mkdir -p "$HOME/.ssh"
+  {
+    echo ""
+    echo "# Added by ssk - $date_str"
+    echo "Host $host_alias"
+    echo "    HostName $host_addr"
+    echo "    User $user_name"
+    echo "    Port $port"
+    echo ""
+  } >> "$config_path"
+  echo "Added: $host_alias"
+  return 0
+}
+
+do_filter() {
+  local keyword="$1"
+  if [[ -z "$keyword" ]]; then
+    do_list
+    return 0
+  fi
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "No hosts saved yet."
+    return 0
+  fi
+
+  local idx=0 host_name="" host_addr="" user_name="" port=""
+
+  flush_filtered() {
+    [[ -z "$host_name" ]] && return
+    [[ -z "$host_addr" ]] && host_addr="$host_name"
+    [[ -z "$user_name" ]] && user_name="root"
+    [[ -z "$port" ]] && port="22"
+    local entry="${user_name}@${host_addr}:${port}  [${host_name}]"
+    if echo "$entry" | grep -qi "$keyword"; then
+      echo "${idx}  ${entry}"
+    fi
+  }
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    key=$(echo "$line" | awk '{print $1}')
+    value=$(echo "$line" | awk '{$1=""; print $0}' | sed 's/^[[:space:]]*//')
+    case "$key" in
+      Host)     flush_filtered; idx=$((idx+1)); host_name="$value"; host_addr=""; user_name=""; port="" ;;
+      HostName) host_addr="$value" ;;
+      User)     user_name="$value" ;;
+      Port)     port="$value" ;;
+    esac
+  done < "$CONFIG_FILE"
+
+  flush_filtered
 }
 
 # ---- Dispatch ----
@@ -139,6 +396,12 @@ case "${1:-}" in
     set -- "$_alias"
     ;;
 esac
+
+# ---- Interactive mode when no args ----
+if [[ $# -eq 0 ]]; then
+  do_connect
+  exit 0
+fi
 
 # ---- Connect (default) ----
 
