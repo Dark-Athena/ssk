@@ -562,15 +562,15 @@ _ssh_banner=$(ssh -v -o BatchMode=yes -o ConnectTimeout=5 -p "$PORT" "${USER_NAM
 
 if echo "$_ssh_banner" | grep -q "no matching host key type"; then
   SSH_OPTS=(-o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa)
-  _ssh_banner=$(ssh -v "${SSH_OPTS[@]}" -o BatchMode=yes -o ConnectTimeout=5 -p "$PORT" "${USER_NAME}@${HOST_ADDR}" 2>&1 || true)
+  _ssh_banner=$(ssh -v ${SSH_OPTS[@]+"${SSH_OPTS[@]}"} -o BatchMode=yes -o ConnectTimeout=5 -p "$PORT" "${USER_NAME}@${HOST_ADDR}" 2>&1 || true)
 fi
 
 if echo "$_ssh_banner" | grep -qi "dropbear"; then
   _pub_key=$(cat "$PUB_PATH")
-  ssh "${SSH_OPTS[@]}" -p "$PORT" "${USER_NAME}@${HOST_ADDR}" \
+  ssh ${SSH_OPTS[@]+"${SSH_OPTS[@]}"} -p "$PORT" "${USER_NAME}@${HOST_ADDR}" \
     "AUTH_DIR=\$([ -d /etc/dropbear ] && echo /etc/dropbear || echo ~/.ssh) && mkdir -p \"\$AUTH_DIR\" && chmod 700 \"\$AUTH_DIR\" && (grep -qxF '$_pub_key' \"\$AUTH_DIR/authorized_keys\" 2>/dev/null || echo '$_pub_key' >> \"\$AUTH_DIR/authorized_keys\") && chmod 600 \"\$AUTH_DIR/authorized_keys\"" 2>/dev/null
 else
-  ssh-copy-id "${SSH_OPTS[@]}" -i "$PUB_PATH" -p "$PORT" "${USER_NAME}@${HOST_ADDR}" 2>/dev/null
+  ssh-copy-id ${SSH_OPTS[@]+"${SSH_OPTS[@]}"} -i "$PUB_PATH" -p "$PORT" "${USER_NAME}@${HOST_ADDR}" 2>/dev/null
 fi
 
 # Save to SSH config
@@ -644,4 +644,4 @@ else
   log "Saved to SSH config: Host $_host_alias"
 fi
 
-ssh "${SSH_OPTS[@]}" -p "${PORT}" "${USER_NAME}@${HOST_ADDR}"
+ssh ${SSH_OPTS[@]+"${SSH_OPTS[@]}"} -p "${PORT}" "${USER_NAME}@${HOST_ADDR}"
