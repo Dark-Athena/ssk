@@ -218,7 +218,13 @@ exit /b 0
         goto :connect_loop
     )
     if /i "!CMD_NAME!"=="/rename" (
-        for /f "tokens=1,2" %%x in ("!CMD_ARGS!") do call :do_rename_by_id %%x %%y
+        set "RN_ID="
+        set "RN_NEW="
+        for /f "tokens=1,*" %%x in ("!CMD_ARGS!") do (
+            set "RN_ID=%%x"
+            set "RN_NEW=%%y"
+        )
+        call :do_rename_cmd
         if !errorlevel!==0 (
             call :do_list
             echo.
@@ -315,6 +321,24 @@ exit /b 0
 
     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
         "$f='%CONFIG%'; $c=Get-Content $f; $out=@(); $skip=$false; foreach($l in $c){ if($l -match '^\s*Host\s+'+$([regex]::Escape('%TARGET_ALIAS%'))+'\s*$'){ $skip=$true; continue } if($skip -and $l -match '^\s+'){ continue } if($skip){ $skip=$false }; if(-not $skip){ $out += $l } }; Set-Content $f ($out -join \"`n\") -NoNewline; Write-Host 'Deleted: %TARGET_ALIAS%'"
+
+    exit /b %errorlevel%
+
+:do_rename_cmd
+    if not defined RN_ID (
+        echo Usage: /rename ^<number^> ^<new-alias^>
+        exit /b 1
+    )
+    if not defined RN_NEW (
+        echo Usage: /rename ^<number^> ^<new-alias^>
+        exit /b 1
+    )
+
+    call :do_get_alias "!RN_ID!"
+    if errorlevel 1 exit /b 1
+
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$f='%CONFIG%'; $c=Get-Content $f -Raw; $esc=[regex]::Escape('!TARGET_ALIAS!'); $old='(?m)^Host\s+'+$esc+'\s*$'; $new='Host !RN_NEW!'; if($c -match $old){ $c=[regex]::Replace($c,$old,$new); Set-Content $f $c -NoNewline; Write-Host 'Renamed: !TARGET_ALIAS! -> !RN_NEW!' } else { Write-Host 'Host alias not found: !TARGET_ALIAS!'; exit 1 }"
 
     exit /b %errorlevel%
 
